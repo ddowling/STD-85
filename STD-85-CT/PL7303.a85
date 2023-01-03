@@ -1,0 +1,155 @@
+;********************************************************************
+;********************************************************************
+;******************                             *********************
+;******************            PRO-LOG          *********************
+;******************             7303            *********************
+;******************       Keypad / Display      *********************
+;******************            Routines         *********************
+;******************                             *********************
+;********************************************************************
+;********************************************************************
+;
+;    PROGRAM WRITTEN BY CRAIG ANDREWS, 2022
+;    COPYRIGHT 2022 (C) OF CRAIG ANDREWS ALL RIGHTS RESERVED
+;
+;
+;********************************************************************
+;********************************************************************
+
+
+;********************************************************************
+;*********************        VERSION       *************************
+;*********************       V1.V2.V3       *************************
+;*********************     ALL ONE DIGIT    *************************
+;********************************************************************
+PL7303_V1	EQU	"0"		;VERSION	
+PL7303_V2	EQU	"0"		;TENTHS
+PL7303_V3	EQU	"1"		;HUNDRETHS
+
+
+;********************************************************************
+;*****************   REQUIRED ASSIGNMENTS    ************************
+;********************************************************************
+;PL7303DP	EQU	?????			;Pro-Log 7307 keypad display data port
+;PL7303CP	EQU	PL7303DP+1		;Pro-Log 7307 keypad display control port
+;SCANBUFFER MINIMUM 4 BYTE SCAN PATTERN BUFFER
+
+
+
+
+
+;********************************************************************
+;*****************  Display Character  *********************
+;  NAME: PL7303_DISPLAY
+;  FUNCTION: Displays Character Stored in A at position stored in B
+;  INPUTS: A=ASCII CHARACTER TO OUTPUT; B2-B0 = 3-BIT POSITION
+;  OUTPUTS: CHARACTER TO PRO LOG 7303 DISPLAY
+;  USER IO:
+;  DESTROYS: A
+;  CALLS: 
+;  DESCRIPTION: CALLED WITH THE ASCII CHARACTER IN A TO BE DISPLAYED
+;	IN POSITION GIVEN AS LOW 3 BITS OF CONTENTS IN B
+;	OUTPUT CHARACTER AND POSITION TO PL7303, STROBES WRITE, AND RETURNS
+;********************************************************************
+
+PL7303_DISPLAY:
+	ORI	10000000B		;set MSBit high to enter character mode
+	OUT	PL7303DP		;SEND TO DATA PORT
+	MOV	A,B			;GET POSITION
+	ANI	00000111B		;SEND POSITION WITH WRITE BIT LOW
+	OUT	PL7303CP
+	ORI	00001000B		;SEND POSITION WITH WRITE BIT HIGH
+	OUT	PL7303CP
+	ANI	00000111B		;SEND POSITION WITH WRITE BIT LOW
+	OUT	PL7303CP
+	RET				;DONE, RETURN
+
+;********************************************************************
+;**********  FILL DISPLAY FROM BUFFER  *****************
+;  NAME: PL7303_FILL
+;  FUNCTION: FILL 8 CHARACTERS FROM BUFFER
+;  INPUTS: HL POINTER TO STRING BUFFER
+;  OUTPUTS: STRING TO PRO LOG 7303 DISPLAY,
+;  USER IO:
+;  DESTROYS: A
+;  CALLS: 
+;  DESCRIPTION: WILL OUTPUT THE NEXT 8 CHARACTERS IN BUFFER TO DISPLAY
+;	STARTING ON LEFT HAND SIDE.  INVALID CHARACTERS REPLACED WITH
+;	BLANK.
+;	RETURNS WITH HL WHERE IT WAS FOUND
+;********************************************************************
+
+PL7303_FILL:
+	PUSH	B			;SAVE BC
+	PUSH	H			;SAVE HL
+	LXI	B,0700H		;B FOR POSITION, C FOR ETX FLAG
+
+PL7303_FILL_LOOP:
+	MOV	A,C			;GET END OF TEXT FLAG
+	CPI	ETX			;IS IT SET?, I.E., ARE WE PAST THE END OF THE BUFFER?
+	JZ	PL7303_FILL_REP	; YES, THEN THE CHARACTER DOESN'T MATTER, REPLACE WITH SPACE
+	MOV	A,M			; NO, THEN GET CHARACTER TO DISPLAY FROM BUFFER
+	CPI	ETX			;END OF TEXT?
+	JNZ	PL7303_FILL_TEST	; NO, JUMP TO NEXT TEST
+	MOV	C,A			; YES, SET ETX INTO C AS FLAG TO FINISH OUT WITH SPACES
+PL7303_FILL_TEST:
+	CPI	SPACE			;IS THIS CHARACTER BELOW SPACE?
+	JC	PL7303_FILL_REP	; YES, REPLACE WITH SPACE AND CONTINUE
+	CPI	"_"			;IS IT GREATER THAN UNDERSCORE?
+	JC	PL7303_FILL_DISP	; NO, OK TO CONTINUE AS IS
+					; YES, REPLACE FIRST
+PL7303_FILL_REP:
+	MVI	A,SPACE		;REPLACED CHARACTER WITH BLANK BEFORE DISPLAYING
+PL7303_FILL_DISP:
+	CALL	PL7303_DISPLAY	;OUTPUT CHARACTER IN A TO POSITION IN B
+	MOV	A,B			;PUT POSITION INTO ACCUMULATOR
+	INX	H			;POINT TO NEXT CHARACTER
+	DCR	B			;DECREMENT CHARACTER POSITION
+	JP	PL7303_FILL_LOOP	;MORE TO DO, SO LOOP
+
+PL7303_FILL_RET			;CLEAN UP AND RETURN
+	POP	H			;RETURN WITH OUTPUT BUFFER WHERE WE FOUND IT
+	POP	B			;RESTORE BC
+	RET				;DONE, RETURN
+
+;********************************************************************
+;**********  READ 7303 KEYPAD  *****************
+;  NAME: PL7303_READ
+;  FUNCTION: READ 7303 KEYPAD AND FILL RESULT INTO BUFFER STARTING AT HL
+;  INPUTS: HL POINTER TO KEYPAD FILL BUFFER
+;  OUTPUTS: RETURNS WITH A CONTAINING FLAGS FOR EACH COLUMN WITH KEYPRESS
+;  USER IO:
+;  DESTROYS: A
+;  CALLS: 
+;  DESCRIPTION: SCANS KEYPAD AND FILLS RESULTS IN BUFFER
+;********************************************************************
+
+PL7303_READ:
+	PUSH	B			;SAVE BC PAIR
+	PUSH	D			;SAVE DE PAIR
+	MVI	B,03D			;B=COUNTER
+	MVI	C,10000000B		;C=COLUMN SELECT
+	MVI	D,00H			;KEY CLOSED FLAG
+	
+PL7303_READLOOP:
+	MOV	A,C			;GET ENABLED COLUMN
+	RLC				; MOVE ONE COLUMN
+	MOV	C,A			;RESAVE COLUMN SELECT
+	OUT	PL7303DP		;SELECT COLUMN
+	IN	PL7303DP		;GET SCAN RESULT
+	MOV	M,A			;SAVE SCAN RESULT IN BUFFER
+	ORA	A			;TEST IF ANY KEY WAS CLOSED
+	JZ	PL7303_OPEN		; NO, CONTINUE
+	MOV	A,C			; YES, GET COLUMN PATTERN
+	ORA	D			; COMBINE WITH ANY COLUMNS ALREADY SET
+	MOV	D,A			; AND SAVE	
+
+PL7303_OPEN:
+	INX	H			;NEXT BUFFER LOCATION
+	DCR	B			;ONE DONE
+	JP	PL7303_READLOOP	;DO FOR ALL FOUR COLUMNS
+	MOV	A,D			;LEAVE WITH ANY CLOSED COLUMNS IN D
+	POP	D			;RESTORE D
+	POP	B			;RESTORE B
+	RET				;AND RETURN
+

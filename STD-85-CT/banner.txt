@@ -1,0 +1,19 @@
+;http://patorjk.com/software/taag/#p=display&f=Banner&t=SBC-85%0AConfidence%0ATest
+BANNER:
+	DB	LF, LF, LF, LF, CR
+	DB	" #####  ####### #####            #####  #######", CR, LF
+	DB	"#     #    #    #    #          #     # #", CR, LF
+	DB	"#          #    #     #         #     # #", CR, LF
+	DB	" #####     #    #     # #######  #####  ######", CR, LF
+	DB	"      #    #    #     #         #     #       #", CR, LF
+	DB	"#     #    #    #    #          #     # #     #", CR, LF
+	DB	" #####     #    #####            #####   #####", CR, LF
+	DB	CR, LF
+	DB	"		 #####     #######", CR, LF
+	DB	"		#     #       #", CR, LF
+	DB	"		#             #", CR, LF
+	DB	"		#             #", CR, LF
+	DB	"		#             #", CR, LF
+	DB	"		#     #       #", CR, LF
+	DB	"		 #####        #", CR, LF, LF, LF, LF, ETX
+                                                         
