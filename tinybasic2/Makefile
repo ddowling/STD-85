@@ -1,6 +1,6 @@
 all: tinybasic.hex serial_test.hex
 
-AS85 = ../../a85/a85
+AS85 = a85
 
 tinybasic.hex: tinybasic.asm
 	$(AS85) tinybasic.asm -O tinybasic.hex -L tinybasic.lst

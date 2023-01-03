@@ -36,7 +36,7 @@ V3	EQU	"6"		;HUNDRETHS
 ;*****************  ALSO SEE AT END OF FILE  ************************
 ;********************************************************************
 	INCL	"ASCII.DEF"
-	INCL	"OPCODES.DEF"
+;	INCL	"OPCODES.DEF"
 
 
 
@@ -86,7 +86,7 @@ PL7702A1	EQU	04000H		;PRO-LOG 7702A 16K RAM 4000-7FFF
 PL7702A2	EQU	08000H		;PRO-LOG 7702A 16K RAM 8000-BFFF
 M1_Dfalt	EQU	0C000H		;M1 6264 RAM 8K C000-DFFF
 OneK_Dfalt	EQU	0E000H		;One K Block E000-FFFF
-;M2_Dfalt	EQU			;M2 Default Mapping Base Address
+M2_Dfalt	EQU	0A000H		;M2 Default Mapping Base Address
 
 
 i8155_DBlock	EQU	0		;8155 1K block default selection
