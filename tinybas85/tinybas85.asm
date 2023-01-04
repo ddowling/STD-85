@@ -2101,6 +2101,8 @@ PU1:    PUSH H
 ;START:  LXI  SP,STACK          ;THIS IS AT LOC. 0
 ;        MVI  A,80H
 INIT:   OUT  DAC                ;PUT OUT HALF VCC ON DAC
+	MVI  A,77H	        ; STD7304 9600 Baud
+        OUT  UARTB
         SUB  A                  ;RESET A
         OUT  SELECT             ;RESET D F/F SELECT LINES
         OUT  UARTC              ;PUT 8251 IN COMMAND MODE
@@ -2126,27 +2128,28 @@ ZMEM1:  MVI  M,0
         SIM                     ;SET THE NEW MASK
         EI                      ;ENABLE INTERRUPT
 ;
-        LXI  B,EESTRT           ;START ADR IN EEPROM
-        LXI  D,2                ;LENGTH TO READ
-        LXI  H,RNDNUM           ;WHERE TO STORE IT
-        CALL EERD               ;READ THE EEPROM
-        LHLD RNDNUM             ;GET THE VALUE AGAIN
-        INX  H                  ;INCREMENT AND SAVE
-        SHLD RNDNUM             ;THIS VALUE AS NEXT
-        LXI  B,EESTRT           ;RANDOM NUMBER SEED
-        LXI  D,2                ;IN THIS WAY THE RANDOM
-        LXI  H,RNDNUM           ;SEQUENCE WILL NOT
-        CALL EEWR               ;REPEAT EVERY POWER ON
-;
-        CALL ST1                ;MAKE RSTART INITALIZATION
-        IN   PORTC              ;BACK DOOR TO ESCAPE FROM
-        ANI  18H                ;ROUGE AUTORUN PRG EEPROM
-        JZ   CONT               ;BY PRESSING BTNS PC3+PC4
-        CALL LD0                ;TRY READ PGM FROM EEPROM
-        LXI  D,TXTBGN+6         ;AFTER 2 BYTE LINE NUM
-                                ;AND STATEMENT "REM " WE
-        LXI  H,TAB10-1          ;MAY FIND TEXT 'AUTORUN'
-        JMP  EXEC               ;IF SO RUN THE PROGRAM
+	;;  FIXME Not configured
+;;         LXI  B,EESTRT           ;START ADR IN EEPROM
+;;         LXI  D,2                ;LENGTH TO READ
+;;         LXI  H,RNDNUM           ;WHERE TO STORE IT
+;;         CALL EERD               ;READ THE EEPROM
+;;         LHLD RNDNUM             ;GET THE VALUE AGAIN
+;;         INX  H                  ;INCREMENT AND SAVE
+;;         SHLD RNDNUM             ;THIS VALUE AS NEXT
+;;         LXI  B,EESTRT           ;RANDOM NUMBER SEED
+;;         LXI  D,2                ;IN THIS WAY THE RANDOM
+;;         LXI  H,RNDNUM           ;SEQUENCE WILL NOT
+;;         CALL EEWR               ;REPEAT EVERY POWER ON
+;; ;
+;;         CALL ST1                ;MAKE RSTART INITALIZATION
+;;         IN   PORTC              ;BACK DOOR TO ESCAPE FROM
+;;         ANI  18H                ;ROUGE AUTORUN PRG EEPROM
+;;         JZ   CONT               ;BY PRESSING BTNS PC3+PC4
+;;         CALL LD0                ;TRY READ PGM FROM EEPROM
+;;         LXI  D,TXTBGN+6         ;AFTER 2 BYTE LINE NUM
+;;                                 ;AND STATEMENT "REM " WE
+;;         LXI  H,TAB10-1          ;MAY FIND TEXT 'AUTORUN'
+;;         JMP  EXEC               ;IF SO RUN THE PROGRAM
 ;
 CONT:   LXI  H,TXTBGN           ;ELSE, DISCARD WHATEVER
         SHLD TXTUNF             ;PGM READ FROM EEPROM
@@ -2550,6 +2553,7 @@ MSG0:   DB   CR
         DB   "    TINY BASIC FOR INTEL 8085"    ,CR
         DB   " LI-CHEN WANG/ROGER RAUSKOLB 1976",CR
         DB   "        ANDERS HJELM 2020"        ,CR
+        DB   "        Denis Dowling 2023"        ,CR
         DB   0
 ;
 MSGHLP: DB   CR
@@ -2672,12 +2676,12 @@ MSGMAN: DB   CR
         DB   " >>  Right shift"                                                 ,CR
         DB   0
 ;
-BDATE:  DB   "20201231",CR
+BDATE:  DB   "20230104",CR
         DB   0
 ;
-LSTROM: DS   0                  ;ALL ABOVE CAN BE ROM
+LSTROM:		                 ;ALL ABOVE CAN BE ROM
 ;
-        ORG  8000H              ;HERE DOWN MUST BE RAM
+        ORG  0C000H              ;HERE DOWN MUST BE RAM
 RAMBGN: DS   0
 RCVCHR: DS   1                  ;LAST RCVD CHAR IN RUN
 DIVOPR: DS   1                  ;TMP STORE DIV OPERATION
@@ -2699,16 +2703,15 @@ TXTBGN: DS   0                  ;TEXT SAVE AREA BEGINS
 ;                               ;WHERE BASIC PGM IS STORED
 ;                               ;MEMORY ABOVE TXTUNF HOLDS
 ;                               ;@(n),@(n-1),..,@(2),@(1)
-        ORG  0BF00H             ;RESERVE 54+74+128 BYTE
+        ORG  0DF00H             ;RESERVE 54+74+128 BYTE
 TXTEND: DS   0                  ;TEXT SAVE AREA ENDS
 VARBGN: DS   54                 ;VARIABLE @(0),A,B,..,Z
 BUFFER: DS   74                 ;INPUT BUFFER
 BUFEND: DS   0                  ;BUFFER ENDS
 STKLMT: DS   0                  ;AND MEETS STACK LIMIT
 ;                               ;MAKES ROOM FOR 128 BYTE
-        ORG  0C000H             ;STACK STARTS HERE AND
+        ORG  0E000H             ;STACK STARTS HERE AND
 STACK:  DS   0                  ;GROWS TOWARDS LOWER ADDR
-XRAM:   DS   16384              ;NOT HANDLED BY TINY BASIC
 ;
 ; *** COMMUNICATION ASCII CONSTATNTS ***
 CR      EQU  0DH
@@ -2717,23 +2720,32 @@ BS      EQU  08H
 ESC     EQU  1BH
 ;
 ; *** IO PORT MAP AND RELATED DEFINES ***
-PCMD    EQU  00H
-PORTA   EQU  01H
-PORTB   EQU  02H
-PORTC   EQU  03H
-PTIML   EQU  04H
-PTIMH   EQU  05H
-;
-UARTD   EQU  10H
-UARTC   EQU  11H
+PCMD    EQU  0E0H
+PORTA   EQU  PCMD + 01H
+PORTB   EQU  PCMD + 02H
+PORTC   EQU  PCMD + 03H
+PTIML   EQU  PCMD + 04H
+PTIMH   EQU  PCMD + 05H
+				;
+UART 	EQU 050H
+UARTB  	EQU UART + 00H
+UARTD 	EQU UART + 03H
+UARTC 	EQU UART + 04H
+
+	;;  FIXME Don't want to mess with the modem control lines!!
 URESET  EQU  01000000b          ;RESET COMMAND
-USETUP  EQU  01001110b          ;8 DATA, 1 STOP, X16
-UENABL  EQU  00010101b          ; - ,ERRST,RXEN, - ,TXEN
-UDTR    EQU  00000010b          ; - ,  -  , -  ,DTR, -
-URTS    EQU  00100000b          ;RTS,  -  , -  , - , -
-;
+;; USETUP  EQU  01001110b          ;8 DATA, 1 STOP, X16
+;; UENABL  EQU  00010101b          ; - ,ERRST,RXEN, - ,TXEN
+;; UDTR    EQU  00000010b          ; - ,  -  , -  ,DTR, -
+;; URTS    EQU  00100000b          ;RTS,  -  , -  , - , -
+USETUP	EQU 04EH
+UENABL  EQU 037H
+UDTR	EQU 0H
+URTS 	EQU 0H
+	
+	;; FIXME These peripherals need to be deleted as they do no exist
 SPICLK  EQU  20H
-SELECT  EQU  30H
+SELECT  EQU  0FCH
 ;
 ADC1    EQU  40H                ;ADC CONV.TIME 140 MICROSEC
 ADC2    EQU  50H                ;OK TO USE CONSECUTIVE BASIC
