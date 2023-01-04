@@ -20,9 +20,9 @@ E000	FFFF	256 byte 8155 RAM
 
 The IO map is configured as
 
+E0	E8	8155 IO
 50	57	7304 dual UART
-e0	e7	8155 IO
-fc	ff	Onboard port
+FC	FF	Onboard port
 
 ## Onboard Port Configuration
 Q0	Default/Alternate Memory Map
@@ -39,7 +39,17 @@ Q7	SPEAKER
 J4	1	2	CLK to 8155 TIMERIN
 J5	1	2	Timer out (TO) to INT7.5
 
+M1 Default	SW2	 7,9
+M1 Alternate	SW3	 7,9
+M2 Default	SW6 	 x
+M2 Alternate	SW7 	 x
+M3 Default	SW8 	 1,9
+M3 Alternate	SW9 	 1,9
+1K Default	SW10	 8,9
+1K Alternate	SW11	 8,9
 
+OBP		SW12	 8,9 (4 io ports 0xfc-0xff)
+8155		SW13	 1,2,9 (8 io ports 0xe0-0xe8)
 
 
 ## tinybasic2
