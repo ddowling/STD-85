@@ -2,8 +2,9 @@ all: tinybasic3.hex
 
 AS = asl -cpu 8085 -gnuerrors
 
+# Assemble and generate a listing
 %.p: %.asm
-	$(AS) $<
+	$(AS) -L $<
 
 # Create hex file with 28 bytes to match the original listing
 %.hex: %.p

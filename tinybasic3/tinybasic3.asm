@@ -84,7 +84,7 @@ INIT:	LXI SP, STACK
 	STA RANPNT+1
 PURGE:	LXI h,TEXT+4		;PURGE TEXT AREA
 	SHLD TXTUNF
-	MVI M, 0FFH
+	MVI H, 0FFH
 	SHLD TEXT
 TELL:	LXI D, MSG		;TELL USER
 	CALL PRTSTG
@@ -173,7 +173,7 @@ ST3:    POP  B                  ;GET READY TO INSERT
         MVI  A,0
         ADC  H
         MOV  D,A                ;HL->NEW UNFILLED AREA
-        LXI  D,TXTLMT           ;CHECK TO SEE IF THERE
+        LHLD TXTLMT           ;CHECK TO SEE IF THERE
 	XCHG
 	CALL COMP		; IS ENOUGH SPACE
         JNC  QSORRY             ;SORRY, NO ROOM FOR IT
@@ -238,7 +238,7 @@ EX4:    INX  H                  ;JUMP ADDR., WHICH IS
 EX5:    MOV  A,M                ;LOAD HL WITH THE JUMP
         INX  H                  ;ADDRESS FROM THE TABLE
         MOV  L,M
-        ANI  7FH                ;MASK OFF BIT 7
+        ANI  0FFH
         MOV  H,A
         POP  PSW                ;CLEAN UP THE GABAGE
         PCHL                    ;AND WE GO DO IT
@@ -380,7 +380,7 @@ PR3:    CALL EXPR		;YES EVALUATE EXPR
 PR4:	CALL QTSTG		;LOOK FOR MORE TO PRINT
 	JMP PR9
 PR5:	TSTC ",", PR8		;IF "," GO FIND NEXT
-PR6:	TSTC "*", PR7
+PR6:	TSTC ",", PR7
 	MVI A, ' '
 	CALL OUTCH
 	JMP PR6
@@ -638,9 +638,9 @@ IP3:	CALL IP12
 	CALL ENDCHK
 	POP D			;OK GET OLD HL
 	XCHG
-	MOV H,E
+	MOV M, E
 	INX H
-	MOV M,D
+	MOV M, D
 IP4:	POP H			;GET OLD "CURRENT"
 	SHLD CURRNT
 	POP D			;AND OLD TEXT POINTER
@@ -748,7 +748,7 @@ XPR8:   MOV  A,C                ;SUBROUTINE FOR ALL
         MVI  A,1
         RET
 ;
-EXPR1:  TSTC "-", XPR1          ;NEGATIVE SIGN?
+EXPR1:  TSTC "-", XP11          ;NEGATIVE SIGN?
         LXI  H,0H               ;YES, FAKE '0-'
         JMP  XP16               ;TREAT LIKE SUBTRACT
 XP11:   TSTC "+", XP12           ;POSITIVE SIGN? IGNORE
@@ -826,7 +826,7 @@ XP25:   POP  D                  ;AND TEXT POINTER
         CM   CHGSGN             ;CHANGE SIGN IF NEEDED
         JMP  XP21               ;LOOK FOR MORE TERMS
 ;
-EXPR3:  LXI  H,TAB4-1           ;FIND FUNCTION IN TAB4
+EXPR3:  LXI  H,TAB3-1           ;FIND FUNCTION IN TAB4
         JMP  EXEC               ;AND GO DO IT
 NOTF:   CALL TSTV               ;NO, NOT A FUNCTION
         JC   XP32               ;NOR A VARIABLE
@@ -880,7 +880,7 @@ ABS:    CALL PARN               ;*** ABS(EXPR) ***
 SIZE:   LHLD TXTUNF             ;*** SIZE ***
         PUSH D                  ;GET THE NUMBER OF FREE
         XCHG                    ;BYTES BETWEEN 'TXTUNF'
-        LXI  H,VARBGN           ;AND 'VARBGN'
+        LHLD TXTLMT             ;AND 'TXTLMT'
         CALL SUBDE
         POP  D
         RET
@@ -1129,7 +1129,7 @@ TV1:	CPI 27			;NOT @, IS IT A TO Z?
 	MVI A,0
 	ADC H
 	MOV H,A
-
+	RET
 
 ; *** TSTCH *** TSTNNUM ***
 ;	
@@ -1307,7 +1307,7 @@ PS2:    LDAX D                  ;GET A CHARACTER
 ;
 QTSTG:  TSTC "\"", QT3          ;*** QTSTG ***
         MVI  A,'\"'             ;IT IS A "
-QT1:    CALL PR1                ;PRINT UNTIL ANOTHER
+QT1:    CALL PS1                ;PRINT UNTIL ANOTHER
 QT2:	CPI  CR                 ;WAS LAST ONE A CR?
         POP  H                  ;RETURN ADDRESS
         JZ   RUNNXL             ;WAS CR, RUN NEXT LINE
@@ -1316,12 +1316,13 @@ QT2:	CPI  CR                 ;WAS LAST ONE A CR?
         INX  H
         PCHL                    ;RETURN
 QT3:    TSTC "'", QT4           ;IS IT A '
-        MVI  A,'\''             ;YES, DO THE SAME
+        MVI  A, "'"             ;YES, DO THE SAME
         JMP  QT1                ;AS IN "
 QT4:    TSTC "^", QT5           ;IS IT UP-ARROW?
-	LDAX d			;YES CONVERT CHARACTER
+	LDAX D			;YES CONVERT CHARACTER
 	XRI 040H		;TO CONTROL-CH
 	CALL OUTCH
+	LDAX D			;JUST IN CASE IT IS A CR
 	INX D
 	JMP QT2
 QT5:	RET			;NONE OF THE ABOVE
@@ -1395,7 +1396,7 @@ TAB2:	ITEM 'NEXT', NEXT	;DIRECT/STATEMENT
 	ITEM 'GOTO', GOTO
 	ITEM 'GOSUB', GOSUB
 	ITEM 'RETURN', RETURN
-	ITEM 'NEW', NEW
+	ITEM 'REM', REM
 	ITEM 'FOR', FOR
 	ITEM 'INPUT', INPUT
 	ITEM 'PRINT', PRINT
@@ -1447,12 +1448,12 @@ RANEND:	DS_0
 CRLF:	MVI A,00DH		;CR IN A
 OUTCH:	JMP _OUT_
 CHKIO:	JMP _IN_
-GETLN:  LXI  D, BUFFER           ;PROMPT AND INIT.
+GETLN:  LXI  D, BUFFER          ;PROMPT AND INIT.
 GL1:	CALL OUTCH
-GL2:	CALL CHKIO              ;CHECK KEYBOARD
-        JZ   GL1                ;NO INPUT, WAIT
-        CPI  7FH                ;DELETE LAST CHARACTER?
-        JZ   GL2                ;YES
+GL2:	CALL CHKIO              ;GET A ChARACTER
+        JZ   GL2                ;NO INPUT, WAIT
+        CPI  LF
+        JZ   GL2
 GL3:	STAX D			;SAVE CH
 	CPI 008H		;IS IT BACK-SPACE?
 	JNZ GL4			;NO MORE TESTS
