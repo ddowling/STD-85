@@ -1,4 +1,4 @@
-all: tinybasic3.hex
+all: tinybasic3_orig.hex tinybasic3.hex
 
 AS = asl -cpu 8085 -gnuerrors
 
