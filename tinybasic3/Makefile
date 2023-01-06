@@ -1,0 +1,13 @@
+all: tinybasic3.hex
+
+AS = asl -cpu 8085 -gnuerrors
+
+%.p: %.asm
+	$(AS) $<
+
+# Create hex file with 28 bytes to match the original listing
+%.hex: %.p
+	p2hex -l 28 $<
+
+#program:
+#	minipro -p AM28C64B@DIP28 -f ihex -w tinybas85.hex

@@ -14,8 +14,31 @@
 BOTSCR EQU 00080H
 TOPSCR EQU 00200H
 BOTRAM EQU 02000H
-CFLLMT EQU 04000H
-EOTROM EQU 0F000H
+DFTLMT EQU 04000H
+BOTROM EQU 0F000H
+;
+; MACROS
+;	
+TSTC	MACRO CH, LABEL
+	CALL TSTCH
+	DB CH
+	DB (LABEL - $$TSTR)
+$$TSTR:	
+	ENDM
+
+ITEM    MACRO TEXT, WHERE
+	DB TEXT
+        DB (WHERE >> 8) | 128
+        DB WHERE & 0FFH
+        ENDM
+
+DS_0 MACRO			; USED TO SUPPRESS WARNINGS FROM "DS 0"
+	ENDM
+
+; Some ASCII constants used in the original code
+CR	EQU 00DH
+LF	EQU 00AH
+	
 ;
 ;  DEFINE VARIABLES, BUFFER AND STACK IN RAM
 ; 
@@ -25,31 +48,31 @@ TXTLMT:	DS 2			;LIMIT OF TEXT AREA
 VARBGN:	DS 2*26			;TB VARIABLES A-Z
 CURRNT:	DS 2			;POINTS TO CURRENT LINE
 STKGOS:	DS 2			;SAVES SP IN 'GOSUB'
-VARNXT:	DS 0			;TEMP STORAGE
-STKIN:	DS 2			;SAVE SP IN 'INPUT'
+VARNXT:	DS_0			;TEMP STORAGE
+STKINP:	DS 2			;SAVE SP IN 'INPUT'
 LOPVAR:	DS 2             	;'FOR' LOOP SAVE AREA 
 LOPINC:	DS 2			;INCREMENT
-LOPLMP:	DS 2			;LIMIT
+LOPLMT:	DS 2			;LIMIT
 LOPLN:	DS 2 			;LINE NUMBER
 LOPPT:	DS 2			;TEXT POINTER
 RANPNT:	DS 2			;RANDOM NUMBER POINTER
 	DS 1			;EXTRA BYTE FOR BUFFER
 BUFFER:	DS 132			;INPUT BUFFER
-BUFEND:	DS 0			;BUFFER END
+BUFEND:	DS_0			;BUFFER END
 	DS 4			;EXTRA BYTES FOR STACK
-STKLMT:	DS 0			;SOFT LIMIT FOR STACK
+STKLMT:	DS_0			;SOFT LIMIT FOR STACK
 	ORG TOPSCR
-STACK:	DS 0			;STACK STARTS HERE
+STACK:	DS_0			;STACK STARTS HERE
 	ORG BOTRAM
-TXTJNF:	DS 2
+TXTUNF:	DS 2
 TEXT:	DS 2
 
 ;
 ; INITIALIZE
 ;
-	ORG BOTRAM
-INIT:	LXI SP, STACL
-	CALL CTLF
+	ORG BOTROM
+INIT:	LXI SP, STACK
+	CALL CRLF
 	LXI H, KEYWRD		;AT POWER ON KEYWRD IS
 	MVI A, 0C3H		;PROBABABLY NOT C3
 	CMP M
@@ -57,8 +80,8 @@ INIT:	LXI SP, STACL
 	MOV M, A		;NO, SET IT TO C3
 	LXI H, DFTLMT		;AND SET DEFAULT VALUE
 	SHLD TXTLMT		;IN TXTLMT
-	MVI A, BOTROM		;INITIALIZE RANPRT
-	STA RANPRT+1
+	MVI A, BOTROM>>8	;INITIALIZE RANPRT
+	STA RANPNT+1
 PURGE:	LXI h,TEXT+4		;PURGE TEXT AREA
 	SHLD TXTUNF
 	MVI M, 0FFH
@@ -69,7 +92,7 @@ TELL:	LXI D, MSG		;TELL USER
 MSG:	DB 'TINY '
 	DB 'BASIC'
 	DB ' V3.0', CR
-OK:	DB 'OK, CR
+OK:	DB 'OK', CR
 WHAT:	DB 'WHAT?', CR
 HOW:	DB 'HOW?', CR
 SORRY:	DB 'SORRY', CR
@@ -100,7 +123,7 @@ SORRY:	DB 'SORRY', CR
 ; SHOULD POINT TO A 0.
 RSTART: LXI  SP,STACK
 	LXI H,ST1+1		;LITERAL 0
-	SHLD CURRENT		;CURRNT->LINE # = 0
+	SHLD CURRNT		;CURRNT->LINE # = 0
 ST1:    LXI  H,0
         SHLD LOPVAR
         SHLD STKGOS
@@ -109,7 +132,7 @@ ST1:    LXI  H,0
 ST2:	MVI  A,'>'              ;PROMPT '>' AND
         CALL GETLN              ;READ A LINE
         PUSH D                  ;DE->END OF LINE
-        LXI  D,BUFFER           ;DE->BEGINNING OF LINE
+        LXI  D, BUFFER          ;DE->BEGINNING OF LINE
         CALL TSTNUM             ;TEST IF IT IS A NUMBER
 	CALL IGNBLK
         MOV  A,H                ;HL=VALUE OF THE # OR
@@ -321,7 +344,7 @@ GOTO:   CALL EXPR               ;*** GOTO EXPR ***
 LIST:   CALL TSTNUM             ;TEST IF THERE IS A #
 	PUSH H
 	LXI H, 0FFFFH
-	TSTC ',',LS1		;FIXME CANNOT READ??
+	TSTC ",", LS1
 	CALL TSTNUM
 LS1:	XTHL
         CALL ENDCHK             ;IF NO # WE GET A 0
@@ -340,13 +363,13 @@ LS2:    JC   RSTART             ;C:PASSED TXTUNF
         JMP  LS2                ;AND LOOP BACK
 ;
 PRINT:  MVI  C,8                ;C = # OF SPACES
-	TSTC '\;',PR1		;IF NULL LIST & ";"
+	TSTC ";", PR1		;IF NULL LIST & ";"
         CALL CRLF               ;GIVE CR-LF AND
         JMP  RUNSML             ;CONTINUE SAME LINE
-PR1:    TSTC @CR, PR6           ;IF NULL LIST (CR)
+PR1:    TSTC CR, PR6           ;IF NULL LIST (CR)
         CALL CRLF               ;ALSO GIVE CR-LF AND
         JMP  RUNNXL             ;GO TO NEXT LINE
-PR2:    TSTC '#', PR4           ;ELSE IS IT FORMAT?
+PR2:    TSTC "#", PR4           ;ELSE IS IT FORMAT?
 PR3:    CALL EXPR		;YES EVALUATE EXPR
 	MVI A, 0C0H
 	ANA L
@@ -356,8 +379,8 @@ PR3:    CALL EXPR		;YES EVALUATE EXPR
 	JMP PR5
 PR4:	CALL QTSTG		;LOOK FOR MORE TO PRINT
 	JMP PR9
-PR5:	TSTC ',',PR8		;IF "," GO FIND NEXT
-PR6:	TSTC '*',PR7
+PR5:	TSTC ",", PR8		;IF "," GO FIND NEXT
+PR6:	TSTC "*", PR7
 	MVI A, ' '
 	CALL OUTCH
 	JMP PR6
@@ -391,7 +414,7 @@ PR9:	CALL EXPR		;EVALUATE THE EXPR
 ; NEVER HAD A 'GOSUB' AND IS THUS AN ERROR.
 ;
 GOSUB:  CALL PUSHA              ;SAVE THE CURRENT "FOR"
-        CAL EXPR                ;PARAMETERS
+        CALL EXPR                ;PARAMETERS
         PUSH D                  ;AND TEXT POINTER
         CALL FNDLN              ;FIND THE TARGET LINE
         JNZ  AHOW               ;NOT THERE. SAY "HOW?"
@@ -499,7 +522,7 @@ FR7:    LHLD LOPPT              ;JOB DONE, RESTORE DE
         XCHG
         JMP FINISH              ;AND CONTINUE
 ;
-NEXT:   CALL ISTV               ;GET ADDRESS OF VAR.
+NEXT:   CALL TSTV               ;GET ADDRESS OF VAR.
         JC   QWHAT              ;NO VARIABLE, "WHAT?"
         SHLD VARNXT             ;YES, SAVE IT
 NX1:    PUSH D                  ;SAVE TEXT POINTER
@@ -533,7 +556,7 @@ NX3:    XCHG
         MOV  M,D
         LHLD LOPLMT             ;HL->LIMIT
         POP  PSW                ;OLD HL
-        ORA  
+        ORA  A  
         JP   NX4                ;STEP > 0
         XCHG                    ;STEP < 0
 NX4:    CALL CKHLDE             ;COMPARE WITH LIMIT
@@ -546,7 +569,7 @@ NX4:    CALL CKHLDE             ;COMPARE WITH LIMIT
         JMP FINISH
 NX5:    POP  H
         POP  D
-NX2:    CALL POPA               ;PURGE THIS LOOP
+NX6:    CALL POPA               ;PURGE THIS LOOP
         JMP FINISH
 ;
 ;*************************************************************
@@ -586,10 +609,10 @@ NX2:    CALL POPA               ;PURGE THIS LOOP
 ; THIS IS DONE BY 'DEFLT'.
 ;
 REM:    LXI  H,0H               ;*** REM ***
-        JMP IF1                 ;THIS IS LIKE 'IF 0'
+        JMP  IF1                ;THIS IS LIKE 'IF 0'
 
 IFF:    CALL EXPR               ;*** IF ***
-        MOV  A,H                ;IS THE EXPR.=0?
+IF1:	MOV  A,H                ;IS THE EXPR.=0?
         ORA  L
         JNZ  RUNSML             ;NO, CONTINUE
         CALL FNDSKP             ;YES, SKIP REST OF LINE
@@ -607,10 +630,10 @@ INPUT:                          ;*** INPUT ***
 IP1:    PUSH D                  ;SAVE IN CASE OF ERROR
         CALL QTSTG              ;IS NEXT ITEM A STRING?
         JMP  IP8                ;NO
-IP2:	CALL IPTV               ;YES, BUT FOLLOWED BY A
+IP2:	CALL TSTV               ;YES, BUT FOLLOWED BY A
         JC   IP5                ;VARIABLE?   NO.
 IP3:	CALL IP12
-	LXI D,BUFFER
+	LXI D, BUFFER
 	CALL EXPR
 	CALL ENDCHK
 	POP D			;OK GET OLD HL
@@ -619,15 +642,15 @@ IP3:	CALL IP12
 	INX H
 	MOV M,D
 IP4:	POP H			;GET OLD "CURRENT"
-	SHLD CURRENT
+	SHLD CURRNT
 	POP D			;AND OLD TEXT POINTER
 IP5:	POP PSW			;PURGE JUNK IN STACK
-IP6:	TSTC ",",IP7		;IS NEXT CH ","?
+IP6:	TSTC ",", IP7		;IS NEXT CH ","?
 	JMP INPUT
 IP7:	JMP FINISH
 IP8:	PUSH D			;SAVE FOR "PRTSTG"
 	CALL TSTV		;MUST BE VARIABLE NOW
-	JNC JP11
+	JNC IP11
 IP10:	JMP QWHAT		;"WHAT?" IT IS NOT?
 IP11:	MOV B,E
 	POP D
@@ -654,7 +677,7 @@ DEFLT:  LDAX D                  ;***  DEFLT ***
 ;
 LET:
 LT2:	CALL SETVAL             ;*** LET ***
-LT3:	TSTC ",",LT4            ;SET VALUE TO VAR.
+LT3:	TSTC ",", LT4            ;SET VALUE TO VAR.
         JMP  LET                ;ITEM BY ITEM
 LT4:    JMP FINISH              ;UNTIL FINISH
 ;
@@ -725,12 +748,12 @@ XPR8:   MOV  A,C                ;SUBROUTINE FOR ALL
         MVI  A,1
         RET
 ;
-EXPR1:  TSTC '-',XPR1           ;NEGATIVE SIGN?
+EXPR1:  TSTC "-", XPR1          ;NEGATIVE SIGN?
         LXI  H,0H               ;YES, FAKE '0-'
         JMP  XP16               ;TREAT LIKE SUBTRACT
-XP11:   TST '+',XP12            ;POSITIVE SIGN? IGNORE
+XP11:   TSTC "+", XP12           ;POSITIVE SIGN? IGNORE
 XP12:   CALL EXPR2              ;1ST <EXPR2>
-XP13:   TSTC '+',XP15           ;ADD?
+XP13:   TSTC "+", XP15          ;ADD?
         PUSH H                  ;YES, SAVE VALUE
         CALL EXPR2              ;GET 2ND <EXPR3>
 XP14:   XCHG                    ;2ND IN DE
@@ -744,14 +767,14 @@ XP14:   XCHG                    ;2ND IN DE
         XRA  H                  ;1ST AND 2ND SIGN EQUAL
         JP   XP13               ;SO IS RESULT
         JMP  QHOW               ;ELSE WE HAVE OVERFLOW
-XP25:   TSTC '-',XPR9           ;SUBTRACT?
-XP26:   PUSH H                  ;YES, SAVE 1ST <EXPR2>
+XP15:   TSTC "-", XPR9          ;SUBTRACT?
+XP16:   PUSH H                  ;YES, SAVE 1ST <EXPR2>
         CALL EXPR2              ;GET 2ND <EXPR2>
         CALL CHGSGN             ;NEGATE
         JMP  XP14               ;AND ADD THEM
 
 EXPR2:  CALL EXPR3              ;GET 1ST <EXPR3>
-XP31:   TSTC '*',XP24           ;MULTIPLY?
+XP21:   TSTC "*", XP24          ;MULTIPLY?
         PUSH H                  ;YES, SAVE 1ST
         CALL EXPR3              ;AND GET 2ND <EXPR4>
         MVI  B,0H               ;CLEAR B FOR SIGN
@@ -776,7 +799,7 @@ XP23:   DAD  D
         DCR  A
         JNZ  XP23
         JMP  XP25               ;FINISHED
-XP24:   TSTC '/',XPR9           ;DIVIDE?
+XP24:   TSTC "/", XPR9          ;DIVIDE?
         PUSH H                  ;YES, SAVE 1ST <EXPR3>
         CALL EXPR3              ;AND GET THE SECOND ONE
         MVI  B,0H               ;CLEAR B FOR SIGN
@@ -816,14 +839,14 @@ XP32:   CALL TSTNUM             ;OR IS IT A NUMBER
         MOV  A,B                ;# OF DIGIT
         ORA  A
         RNZ                     ;OK
-PARN:   TSTC '(',XPR0		;NO DIGIT MUST BE
+PARN:   TSTC "(", XPR0		;NO DIGIT MUST BE
         CALL EXPR               ;"(EXPR)"
-	TSTC ')',XPR0				
+	TSTC ")", XPR0				
 XPR9:   RET
 XPR0:   JMP  QWHAT              ;ELSE SAY: "WHAT?"
 ;
 RND:    CALL PARN               ;*** RND(EXPR) ***
-        MOV  A,H                ;EXPR MUST BE +
+        MOV  A, H               ;EXPR MUST BE +
         ORA  A
         JM   QHOW
         ORA  L                  ;AND NON-ZERO
@@ -831,13 +854,13 @@ RND:    CALL PARN               ;*** RND(EXPR) ***
         PUSH D                  ;SAVE BOTH
         PUSH H
         LHLD RANPNT             ;GET MEMORY AS RANDOM
-        LXI  D,RANEND           ;NUMBER
+        LXI  D, RANEND          ;NUMBER
         CALL COMP
         JC   RA1                ;WRAP AROUND IF LAST
         LXI  H,BOTROM
-RA1:    MOV  E,M
+RA1:    MOV  E, M
         INX  H
-        MOV  D,M
+        MOV  D, M
         SHLD RANPNT
         POP  H
         XCHG
@@ -972,7 +995,7 @@ COMP:	MOV A,H			;*** COMP***
 SETVAL: CALL TSTV               ;*** SETVAL ***
         JC   QWHAT              ;"WHAT?" NO VARIABLE
         PUSH H                  ;SAVE ADDRESS OF VAR.
-        tstc '=',SV1            ;PASS "=" SIGN
+        tstc "=", SV1           ;PASS "=" SIGN
         CALL EXPR               ;EVALUATE EXPR.
         MOV  B,H                ;VALUE IS IN BC NOW
         MOV  C,L
@@ -985,10 +1008,10 @@ SETVAL: CALL TSTV               ;*** SETVAL ***
 FINISH:	CALL FIN		;CHECK END OF COMMAND
 SV1:    JMP  QWHAT              ;NO "=" SIGN
 ;
-FIN:    TSTC '\;',F11		;*** FIN *** 
+FIN:    TSTC ";", FI1		;*** FIN *** 
         POP  PSW                ;";", PURGE RET. ADDR.
         JMP  RUNSML             ;CONTINUE SAME LINE
-FI1:    TSTC CR,F12             ;NOT ";", IS IT CR?
+FI1:    TSTC CR, FI2            ;NOT ";", IS IT CR?
         POP  PSW                ;YES, PURGE RET. ADDR.
         JMP  RUNNXL             ;RUN NEXT LINE
 FI2:    RET                     ;ELSE RETURN TO CALLER
@@ -1022,7 +1045,7 @@ ERROR:  CALL CRLF               ;*** ERROR ***
 	CALL PRTCHS
         MVI  A,3FH              ;PRINT A "?"
         CALL OUTCH
-	CALL PTRSTG
+	CALL PRTSTG
 	JMP TELL
 ;
 QSORRY: PUSH D                  ;*** QSORRY ***
@@ -1282,7 +1305,7 @@ PS2:    LDAX D                  ;GET A CHARACTER
         JNZ  PS2                ;NO, NEXT
         RET                     ;YES, RETURN
 ;
-QTSTG:  TSTC '\"',QT3           ;*** QTSTG ***
+QTSTG:  TSTC "\"", QT3          ;*** QTSTG ***
         MVI  A,'\"'             ;IT IS A "
 QT1:    CALL PR1                ;PRINT UNTIL ANOTHER
 QT2:	CPI  CR                 ;WAS LAST ONE A CR?
@@ -1292,15 +1315,15 @@ QT2:	CPI  CR                 ;WAS LAST ONE A CR?
         INX  H
         INX  H
         PCHL                    ;RETURN
-QT3:    TSTC '\'',QT4           ;IS IT A '\''
+QT3:    TSTC "'", QT4           ;IS IT A '
         MVI  A,'\''             ;YES, DO THE SAME
         JMP  QT1                ;AS IN "
-QT4:    TSTC '^',QT5            ;IS IT UP-ARROW?
+QT4:    TSTC "^", QT5           ;IS IT UP-ARROW?
 	LDAX d			;YES CONVERT CHARACTER
 	XRI 040H		;TO CONTROL-CH
 	CALL OUTCH
 	INX D
-	JMP OT2
+	JMP QT2
 QT5:	RET			;NONE OF THE ABOVE
 PRTCHS:	MOV A,E
 	CMP B
@@ -1363,42 +1386,42 @@ PRTLN:  LDAX D                  ;*** PRTLN ***
 	RET
 ;
 ; *** COMMAND TABLES ***
-TAB1:	ITEM 'LIST',LIST	;DIRECT COMMANDS
-	ITEM 'NEW',NEW
-	ITEM 'RUN',RUN
-TAB2:	ITEM 'NEXT',NEXT	;DIRECT/STATEMENT
-	ITEM 'LET',LET
-	ITEM 'IF',IFF
-	ITEM 'GOTO',GOTO
-	ITEM 'GOSUB',GOSUB
-	ITEM 'RETURN',RETURN
-	ITEM 'NEW',NEW
-	ITEM 'FOR',FOR
-	ITEM 'INPUT',INPUT
-	ITEM 'PRINT',PRINT
-	ITEM 'STOP',STOP
-	ITEM ,NOREC
+TAB1:	ITEM 'LIST', LIST	;DIRECT COMMANDS
+	ITEM 'NEW', NEW
+	ITEM 'RUN', RUN
+TAB2:	ITEM 'NEXT', NEXT	;DIRECT/STATEMENT
+	ITEM 'LET', LET
+	ITEM 'IF', IFF
+	ITEM 'GOTO', GOTO
+	ITEM 'GOSUB', GOSUB
+	ITEM 'RETURN', RETURN
+	ITEM 'NEW', NEW
+	ITEM 'FOR', FOR
+	ITEM 'INPUT', INPUT
+	ITEM 'PRINT', PRINT
+	ITEM 'STOP', STOP
+	ITEM , NOREC
 NOREC:	JMP DEFLT
 ;*** JMP USER-COMMAND ***
-TAB3:	ITEM 'RND',RND
-	ITEM 'ABS',ABS
-	ITEM 'SIZE',SIZE
+TAB3:	ITEM 'RND', RND
+	ITEM 'ABS', ABS
+	ITEM 'SIZE', SIZE
 	ITEM ,NOREF
 NOREF:	JMP NOTF
 ; *** JMP USER-FUNCTION ***
-TAB4:	ITEM 'TO',FR1
-	ITEM ,QWHAT
-TAB5:	ITEM 'STEP',FR2
-	ITEM ,FR3
+TAB4:	ITEM 'TO', FR1
+	ITEM , QWHAT
+TAB5:	ITEM 'STEP', FR2
+	ITEM , FR3
 ;*** RELATION OPERATORS	***
-TAB6:	ITEM '>=',XPR1
-	ITEM '#',XPR2
-	ITEM '>',XPR3
-	ITEM '=',XPR5
-	ITEM '<=',XPR4
-	ITEM '<',XPR6
-	ITEM ,XPR7
-RANEND:	EQU *
+TAB6:	ITEM '>=', XPR1
+	ITEM '#', XPR2
+	ITEM '>', XPR3
+	ITEM '=', XPR5
+	ITEM '<=', XPR4
+	ITEM '<', XPR6
+	ITEM , XPR7
+RANEND:	DS_0
 ;
 ;*** INPUT OUTPOUT ROUTINES ***
 ; USER MUST VERIFY AND/OR MODIFY THESE ROUTINES
@@ -1424,7 +1447,7 @@ RANEND:	EQU *
 CRLF:	MVI A,00DH		;CR IN A
 OUTCH:	JMP _OUT_
 CHKIO:	JMP _IN_
-GETLN:  LXI  D,BUFFER           ;PROMPT AND INIT.
+GETLN:  LXI  D, BUFFER           ;PROMPT AND INIT.
 GL1:	CALL OUTCH
 GL2:	CALL CHKIO              ;CHECK KEYBOARD
         JZ   GL1                ;NO INPUT, WAIT
@@ -1434,7 +1457,7 @@ GL3:	STAX D			;SAVE CH
 	CPI 008H		;IS IT BACK-SPACE?
 	JNZ GL4			;NO MORE TESTS
 	MOV A,E			;YES DELETE
-	CPI BUFFER AND OFFH
+	CPI (BUFFER & 0FFH)
 	JZ GL2			;NOTHING TO DELETE
 	LDAX D
 	DCX D
@@ -1442,7 +1465,7 @@ GL3:	STAX D			;SAVE CH
 GL4:	CPI CR			;WAS IT CR?
 	JZ GL5			;YES END OF LINE
 	MOV A,E			;ELSE MORE ROOM?
-	CPI BUFEND AND OFFH
+	CPI (BUFEND & 0FFH)
 	JZ GL2			;NO WAIT FOR CR/RUB-OUT
 	LDAX D			;YES BUMP POINTER
 	INX D
@@ -1456,14 +1479,14 @@ GL5:	INX D			;END OF LINE
 _OUT_:	PUSH PSW		;OUTPUT ROUTINE
 OT1:	IN 0			;PRINT WHAT IS IN A
 	ANI 001H		;TBE BIT
-	JZ 0T1			;WAIT UNTIL READY
+	JZ OT1			;WAIT UNTIL READY
 	POP PSW
 	OUT 1
 	CPI CR			;WAS IT CR?
 	RNZ			;NO, RETURN
-	MVI A,LF		;YES GIVE LF
+	MVI A, LF		;YES GIVE LF
 	CALL _OUT_
-	MVI A,CR
+	MVI A, CR
 	RET
 _IN_:	IN 0
 	ANI 002H		;DAV BIT
