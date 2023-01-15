@@ -1,6 +1,6 @@
 all: tinybasic3_orig.hex tinybasic3.hex
 
-AS = asl -cpu 8085 -gnuerrors
+AS = asl -cpu 8085undoc -gnuerrors
 
 # Assemble and generate a listing
 %.p: %.asm

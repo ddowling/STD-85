@@ -14,56 +14,6 @@
 ;
 ;*************************************************************
 ;
-; *** 8085 ADDITIONAL INSTRUCTIONS ***
-;
-; UNDOCUMENTED INSTRUCTIONS FOR THE 8085 CPU SUPPLIED AS MACROS
-;
-DSUB    MACRO                 ;16-BIT SUBTRACT: HL = HL - BC
-        DB    08H
-        ENDM
-;
-ARHL    MACRO                 ;ARITHMETIC SHIFT RIGHT OF HL
-        DB    10H
-        ENDM
-;
-RDEL    MACRO                 ;ROTATE LEFT THROUGH CARRY OF DE
-        DB    18H
-        ENDM
-;
-LDHI    MACRO BARG1           ;LOAD DE WITH HL + IMMEDIATE BYTE
-        DB    28H
-        DB    BARG1
-        ENDM
-;
-LDSI    MACRO BARG2           ;LOAD DE WITH SP + IMMEDIATE BYTE
-        DB    38H
-        DB    BARG2
-        ENDM
-;
-RSTV    MACRO                 ;RESTART ON OVERFLOW ("CV 0040H")
-        DB    0CBH
-        ENDM
-;
-SHLX    MACRO                 ;STORE HL INDIRECT THROUGH (DE)
-        DB    0D9H
-        ENDM
-;
-LHLX    MACRO                 ;LOAD HL INDIRECT THROUGH (DE)
-        DB    0EDH
-        ENDM
-;
-JNK     MACRO WARG1           ;JUMP ON NOT K-FLAG
-        DB    0DDH
-        DB    (WARG1 & 0FFH)
-        DB    (WARG1 >> 8)
-        ENDM
-;
-JK      MACRO WARG2           ;JUMP ON K-FLAG
-        DB    0FDH
-        DB    (WARG2 & 0FFH)
-        DB    (WARG2 >> 8)
-        ENDM
-;
 ; *** TABLE/ADDRESSING MACRO ***
 ;
 ; USING TWO BYTE ADDRESS WITH MOST SIGNIFICANT BIT SET TO 1
@@ -140,7 +90,22 @@ TIMINT: DI                      ;*** TIMER/RST 7.5 ***
         LHLD TIMCNT             ;GET TIMER COUNT
         INX  H                  ;AND INCREMENT IT
         SHLD TIMCNT
-        MVI  A,10H              ;RESET THE RST 7.5 F/F
+
+	LHLD BEEPTM
+	MOV A, H
+	ORA L		     	; TEST IF BEEPTM IS ZERO
+	JZ TEBEEP
+	DCX H			; DECREMENT BEEPTM IF NOT ZERO
+	SHLD BEEPTM
+	MOV A,L			; LOW TIMER BIT INTO OBP 
+	ANI 01H
+	JZ TLOW
+	MVI A,OBUZZ
+	JMP TBOUT
+TLOW:	XRA A
+TBOUT:	OUT OBP
+	
+TEBEEP:	MVI  A,10H              ;RESET THE RST 7.5 F/F
         SIM
         POP  PSW
         POP  H
@@ -614,26 +579,25 @@ PC1:    IN   UARTC              ;COME HERE TO DO OUTPUT
         RST  6
 ;
 WAIT:   RST  7                  ;*** WAIT(EXPR) ***
-        JMP  BP0                ;SAME AS BEEP BUT NO SOUND
+	XCHG			;SAVE ARGUMENT TO DE
+	PUSH H			;SAVE ORIGINAL DE
+	CALL TCNT		;GET TIMER
+	MOV B, H		;START TIME TO BC
+	MOV C, L
+WAIT0:	CALL CHKIO		;ACCEPT CTRL-C TO EXIT
+	JZ WAIT1
+	STA RCVCHR
+WAIT1:	CALL TCNT
+	DSUB			;SUBTRACT HL WITH ORIGINAL TIMESTAMP IN BC
+	RST 4			;COMPARE WITH DE
+	JC WAIT0
+	POP D
+	RST 6
 ;
 BEEP:   RST  7                  ;*** BEEP(EXPR) ***
-        MVI  A,UENABL+URTS      ;BITPATTERN FOR BEEP ON
-        OUT  UARTC              ;WRITE IT TO PORT
-BP0:    XCHG                    ;ARG TO DE AND TXPTR TO HL
-        PUSH H                  ;SAVE TXTPTR
-        CALL TCNT               ;GET A START TIMESTAMP
-        MOV  B,H                ;TRANSFER START
-        MOV  C,L                ;TIMESTAMP TO BC
-BP1:    CALL CHKIO              ;ACCEPT CTRL-C TO QUIT
-        JZ   BP2                ;JUMP IF NO CHAR RCVD
-        STA  RCVCHR             ;ELSE STORE IT FOR GETC
-BP2:    CALL TCNT               ;GET NEW TIMESTAMP
-        DSUB                    ;SUBTRACT ORIG STAMP IN BC
-        RST  4                  ;CMPR WITH ARGUMENT IN DE
-        JC   BP1                ;CARRY LESS THAN ARGUMENT
-        MVI  A,UENABL           ;BITPATTERN FOR BEEP OFF
-        OUT  UARTC              ;WRITE IT TO PORT
-        POP  D                  ;RESTORE TXTPTR
+	DI
+	SHLD BEEPTM		; STORE THE DURATION IN BEEPTM
+	EI
         RST  6
 ;
 XTAL:   RST  7                  ;*** XTAL(EXPR) ***
@@ -1141,7 +1105,7 @@ XP13:   POP  H                  ;NOT SHIFT, RESTORE
 ;
 LSHIFT: MVI  A,16               ;MAX SHIFT COUNTER
 LSH1:   DCX  D                  ;DE IS NUMBER OF SHIFTS
-        JK   LSH2               ;K-FLAG SET WHEN DONE
+        JX5  LSH2               ;K-FLAG SET WHEN DONE
         DAD  H                  ;LEFT SHIFT IS SAME AS
         DCR  A                  ;MULTIPLICATION BY TWO
         JNZ  LSH1
@@ -1149,7 +1113,7 @@ LSH2:   RET
 ;
 RSHIFT: MVI  A,16               ;MAX SHIFT COUNTER
 RSH1:   DCX  D                  ;DE IS NUMBER OF SHIFTS
-        JK   RSH2               ;K-FLAG SET WHEN DONE
+        JX5  RSH2               ;K-FLAG SET WHEN DONE
         ARHL                    ;SHIFT RIGHT 16-BIT
         DCR  A
         JNZ  RSH1
@@ -2101,8 +2065,8 @@ PU1:    PUSH H
 ;START:  LXI  SP,STACK          ;THIS IS AT LOC. 0
 ;        MVI  A,80H
 INIT:   OUT  DAC                ;PUT OUT HALF VCC ON DAC
-	MVI  A,77H	        ; STD7304 9600 Baud
-        OUT  UARTB
+;	MVI  A,77H	        ; STD7304 9600 Baud
+;        OUT  UARTB
         SUB  A                  ;RESET A
         OUT  SELECT             ;RESET D F/F SELECT LINES
         OUT  UARTC              ;PUT 8251 IN COMMAND MODE
@@ -2153,8 +2117,6 @@ ZMEM1:  MVI  M,0
 ;
 CONT:   LXI  H,TXTBGN           ;ELSE, DISCARD WHATEVER
         SHLD TXTUNF             ;PGM READ FROM EEPROM
-        MVI  A,UENABL+URTS      ;MAKE SHORT BEEP AT START
-        OUT  UARTC              ;GETS TURNED OFF AT ST0
         LXI  H,MSG0             ;PRINT THE START MESSAGE
         CALL PSTR
         JMP  ST0
@@ -2460,7 +2422,7 @@ CHKW1:  CALL CSLOW              ;SELECT EEPROM
         ANI  EEWIPB             ;MASK THE BIT
         RZ                      ;ZERO MEANS READY
         DCX  B                  ;ELSE COUNT LOOPS
-        JNK  CHKW1              ;AND READ AGAIN
+        JNX5 CHKW1              ;AND READ AGAIN
         CALL ASORRY             ;EEPROM NEVER GOT READY
 ;
 EERD:   MOV  A,D                ;** READ EEPROM **
@@ -2477,7 +2439,7 @@ EERD:   MOV  A,D                ;** READ EEPROM **
         MOV  A,C                ;GET ADDRESS LOW BYTE
         CALL SDOUT              ;TRANSMIT
 EERD1:  DCX  D                  ;DECREMENT LENGTH
-        JK   EERD2              ;FINISH WHEN UNDERFLOW
+        JX5  EERD2              ;FINISH WHEN UNDERFLOW
         CALL SDIN               ;READ ONE BYTE
         MOV  M,A                ;STORE IN RAM
         INX  H                  ;BUMP RAM POINTER
@@ -2503,7 +2465,7 @@ EEWRPG: MOV  A,D                ;** WRITE PAGE EEPROM **
         MOV  A,C                ;GET ADDRESS LOW BYTE
         CALL SDOUT              ;TRANSMIT
 EEWR1:  DCX  D                  ;DECREMENT LENGTH
-        JK   EEWR2              ;FINISH WHEN UNDERFLOW
+        JX5  EEWR2              ;FINISH WHEN UNDERFLOW
         MOV  A,M                ;FETCH FROM RAM
         INX  H                  ;BUMP RAM POINTER
         INX  B                  ;AND NEXT START ADDR
@@ -2682,12 +2644,13 @@ BDATE:  DB   "20230104",CR
 LSTROM:		                 ;ALL ABOVE CAN BE ROM
 ;
         ORG  0C000H              ;HERE DOWN MUST BE RAM
-RAMBGN: DS   0
+RAMBGN: 
 RCVCHR: DS   1                  ;LAST RCVD CHAR IN RUN
 DIVOPR: DS   1                  ;TMP STORE DIV OPERATION
 PCMCPY: DS   1                  ;PORT COMMAND SHADOW REG
 USIGNF: DS   1                  ;UNSIGNED OPERATION FLAG
 TIMCNT: DS   2                  ;TIMER INTERRUPT COUNT
+BEEPTM:	DS   2			;WHEN NON ZERO BUZZER WILL SOUND
 CURRNT: DS   2                  ;POINTS TO CURRENT LINE
 STKGOS: DS   2                  ;SAVES SP IN 'GOSUB'
 VARNXT: DS   2                  ;TEMP STORAGE
@@ -2699,19 +2662,19 @@ LOPLN:  DS   2                  ;LINE NUMBER
 LOPPT:  DS   2                  ;TEXT POINTER
 RNDNUM: DS   2                  ;RANDOM NUMBER
 TXTUNF: DS   2                  ;->UNFILLED TEXT AREA
-TXTBGN: DS   0                  ;TEXT SAVE AREA BEGINS
+TXTBGN:                         ;TEXT SAVE AREA BEGINS
 ;                               ;WHERE BASIC PGM IS STORED
 ;                               ;MEMORY ABOVE TXTUNF HOLDS
 ;                               ;@(n),@(n-1),..,@(2),@(1)
         ORG  0DF00H             ;RESERVE 54+74+128 BYTE
-TXTEND: DS   0                  ;TEXT SAVE AREA ENDS
+TXTEND:                         ;TEXT SAVE AREA ENDS
 VARBGN: DS   54                 ;VARIABLE @(0),A,B,..,Z
 BUFFER: DS   74                 ;INPUT BUFFER
-BUFEND: DS   0                  ;BUFFER ENDS
-STKLMT: DS   0                  ;AND MEETS STACK LIMIT
+BUFEND:                         ;BUFFER ENDS
+STKLMT:                         ;AND MEETS STACK LIMIT
 ;                               ;MAKES ROOM FOR 128 BYTE
         ORG  0E000H             ;STACK STARTS HERE AND
-STACK:  DS   0                  ;GROWS TOWARDS LOWER ADDR
+STACK:                          ;GROWS TOWARDS LOWER ADDR
 ;
 ; *** COMMUNICATION ASCII CONSTATNTS ***
 CR      EQU  0DH
@@ -2720,28 +2683,37 @@ BS      EQU  08H
 ESC     EQU  1BH
 ;
 ; *** IO PORT MAP AND RELATED DEFINES ***
+; 8155 REGISTERS
 PCMD    EQU  0E0H
 PORTA   EQU  PCMD + 01H
 PORTB   EQU  PCMD + 02H
 PORTC   EQU  PCMD + 03H
 PTIML   EQU  PCMD + 04H
 PTIMH   EQU  PCMD + 05H
-				;
-UART 	EQU 050H
-UARTB  	EQU UART + 00H
-UARTD 	EQU UART + 03H
-UARTC 	EQU UART + 04H
 
-	;;  FIXME Don't want to mess with the modem control lines!!
+; ONBOARD PORT
+OBP	EQU 0FCH
+OALT	EQU 00000001b
+OMEMEX	EQU 00000010b
+OIOEX	EQU 00000100b
+OSELA	EQU 00001000b
+OSELB	EQU 00010000b
+OSELC	EQU 00100000b
+OSELD	EQU 01000000b
+OBUZZ	EQU 10000000b
+	
+; 8153 REGISTERS
+;UART 	EQU 050H		
+;UARTB  	EQU UART + 00H
+;UARTD 	EQU UART + 03H
+;UARTC 	EQU UART + 04H
+UARTD 	EQU 0F8H
+UARTC	EQU 0F9H
+	
 URESET  EQU  01000000b          ;RESET COMMAND
-;; USETUP  EQU  01001110b          ;8 DATA, 1 STOP, X16
-;; UENABL  EQU  00010101b          ; - ,ERRST,RXEN, - ,TXEN
-;; UDTR    EQU  00000010b          ; - ,  -  , -  ,DTR, -
-;; URTS    EQU  00100000b          ;RTS,  -  , -  , - , -
 USETUP	EQU 04EH
 UENABL  EQU 037H
 UDTR	EQU 0H
-URTS 	EQU 0H
 	
 	;; FIXME These peripherals need to be deleted as they do no exist
 SPICLK  EQU  20H
