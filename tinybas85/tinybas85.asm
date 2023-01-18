@@ -37,31 +37,34 @@ DWA     MACRO WHERE
 ; SECTION.  THEY CAN BE REACHED ONLY BY 3-BYTE CALLS.
 ; BY USING RST CALLS, ROM CODE IS REDUCED BY ABOUT 200 BYTES.
 ;
-        ORG  0H
+        ORG  0000H
 START:  LXI  SP,STACK           ;*** COLD START ***
         MVI  A,80H
         JMP  INIT
-;
+				;
+	ORG 0008H
 TSTC:   XTHL                    ;*** TSTC OR RST 1 *** (24x)
         RST  5                  ;IGNORE BLANKS AND
         CMP  M                  ;TEST CHARACTER
         JMP  TC1                ;REST OF THIS IS AT TC1
 ;
 CRLF:   MVI  A,CR               ;*** CRLF ***
-;
-OUTC:   PUSH PSW                ;*** OUTC OR RST 2 *** (22x)
-        JMP  OC3                ;REST OF THIS IS AT OC3
+				;
+	ORG 0010H		; RST 2
+OUTC:   JMP  OC3                ;REST OF THIS IS AT OC3
 ;
 RIMSK:  RIM                     ;*** READ INTERRUPT MASK ***
         MOV  L,A                ;PLACE RESULT IN L
         RET                     ;THAT'S ALL
         NOP                     ;DUMMY FILL BYTE
-;
+				;
+	ORG 0018H
 EXPR:   CALL EXPR0              ;*** EXPR OR RST 3 *** (11x)
         PUSH H                  ;EVALUATE AN EXPRESSION
         JMP  RELOP              ;REST OF IT AT RELOP
         DB   'W'
-;
+				;
+	ORG 0020H
 COMP:   MOV  A,H                ;*** COMP OR RST 4 *** (16x)
         CMP  D                  ;COMPARE HL WITH DE
         RNZ                     ;RETURN CORRECT C AND
@@ -69,21 +72,25 @@ COMP:   MOV  A,H                ;*** COMP OR RST 4 *** (16x)
         CMP  E                  ;BUT OLD A IS LOST
         RET
         DB   "AN"
-;
+				;
+	ORG 0028H
 IGNBLK: LDAX D                  ;*** IGNBLK/RST 5 *** (7x)
         CPI  ' '                ;IGNORE BLANKS
         RNZ                     ;IN TEXT (WHERE DE->)
         INX  D                  ;AND RETURN THE FIRST
         JMP  IGNBLK             ;NON-BLANK CHAR. IN A
-;
+				;
+	ORG 0030H
 FINISH: POP  PSW                ;*** FINISH/RST 6 *** (16x)
         CALL FIN                ;CHECK END OF COMMAND
         CALL QWHAT              ;PRINT "WHAT?" IF WRONG
         DB   'G'
-;
+				;
+	ORG 0038H
 XPR40:  JMP  XP40               ;*** XP40 OR RST 7 *** (24x)
         NOP                     ;DUMMY FILL BYTE
-;
+				;
+	ORG 003CH
 TIMINT: DI                      ;*** TIMER/RST 7.5 ***
         PUSH H                  ;DURATION 40us EVERY 1ms
         PUSH PSW                ;ONLY ABOUT 2.5% OVERHEAD
@@ -278,12 +285,10 @@ ST2:    LXI  H,0
         RET
 ;
 CTRLC:  SUB  A                  ;FOR CTRL-C WE ALSO
-        OUT  SELECT             ;RESET THE SELECT LINES
+        OUT  OBP                ;RESET THE ONBOARD PORT
 RSTART: LXI  SP,STACK           ;HERE WE COME AFTER
         CALL ST1                ;EXEC FINISH OR CTRL-C
-ST0:    MVI  A,UENABL           ;MAKE SURE BEEP IS OFF
-        OUT  UARTC              ;WRITE IT TO PORT
-        CALL CRLF               ;AND JUMP TO HERE
+ST0:    CALL CRLF               ;AND JUMP TO HERE
         LXI  D,OK               ;DE->STRING
         SUB  A                  ;A=0
         CALL PRTSTG             ;PRINT STRING UNTIL CR
@@ -413,6 +418,7 @@ GOTO:   RST  3                  ;*** GOTO EXPR ***
         POP  PSW                ;CLEAR THE PUSH DE
         JMP  RUNTSL             ;GO DO IT
 ;
+	IFDEF OPTION_LOADSAVE
 SAVE:   LHLD TXTUNF             ;*** SAVE PGM ***
         LXI  B,TXTBGN           ;CALC ACTUAL LENGTH
         DSUB                    ;USING TXTUNF-TXTBGN
@@ -445,6 +451,7 @@ LD1:    LXI  B,EESTRT+4         ;OK READ EERPOM
         LXI  H,TXTBGN           ;TO TEXT AREA
         CALL EERD
         RET
+	ENDIF
 ;
 EDIT:   PUSH D                  ;SAVE PTR FOR THE ASCII NUM
         CALL TSTNUM             ;LOOK FOR A LINE NUMBER
@@ -481,13 +488,18 @@ ED3:    INX  H                  ;LINE NUMBER IN MEMORY
         LXI  H,GLNRTN           ;FIND RETURN ADDR
         PUSH H                  ;AND PUT IT ON STACK
         JMP  EDITLN             ;GOTO GETLINE FOR EDIT
-;
+				;
+	IFDEF OPTION_HELP
 HELP:   LXI  H,MSGHLP           ;*** SHORT HELP ***
-        JMP  MA1                ;PRINT THE TEXT UNTIL NULL
-;
+	CALL PSTR
+        JMP  RSTART             ;PRINT THE TEXT UNTIL NULL
+	ENDIF
+	
+	IFDEF OPTION_MANUAL
 MAN:    LXI  H,MSGMAN           ;*** MANUAL ***
-MA1:    CALL PSTR               ;PRINT THE TEXT UNTIL NULL
+        CALL PSTR               ;PRINT THE TEXT UNTIL NULL
         JMP  RSTART
+	ENDIF
 ;
 ;*************************************************************
 ;
@@ -571,11 +583,8 @@ PUTC:   RST  7                  ;*** PUTC(EXPR) ***
         MOV  A,H
         ORA  A                  ;CHECK HL < 256
         CNZ  QHOW               ;ELSE CAN'T PRINT CHAR
-PC1:    IN   UARTC              ;COME HERE TO DO OUTPUT
-        ANI  1H                 ;STATUS BIT
-        JZ   PC1                ;NOT READY, WAIT
-        MOV  A,L                ;READY, GET CHAR
-        OUT  UARTD              ;AND SEND IT OUT
+	MOV  A,L
+	CALL CONPUT
         RST  6
 ;
 WAIT:   RST  7                  ;*** WAIT(EXPR) ***
@@ -643,10 +652,12 @@ POUT:   RST  7                  ;GET FIRST ARGUMENT (ADDR)
 POU1:   CALL RAMEXC             ;CALL SUBROUTINE IN RAM
         RST  6
 ;
+	IFDEF OPTION_SPI
 SOD:    RST  7                  ;GET ARGUMENT (DATA)
         MOV  A,L                ;GET LO BYTE
         CALL SDOUT              ;AND SEND IT
         RST  6
+	ENDIF
 ;
 POKE:   RST  7                  ;GET FIRST ARGUMENT (ADDR)
         PUSH H                  ;SAVE IT
@@ -1336,10 +1347,12 @@ PIN:    RST  7                  ;*** IN(EXPR) ***
         MVI  H,0                ;HI BYTE ALWAYS ZERO
         RET
 ;
+	IFDEF OPTION_SPI
 SID:    CALL SDIN               ;READ SERIAL INTERFACE
         MOV  L,A                ;FUNCTION RETURN VALUE IN HL
         MVI  H,0                ;HI BYTE ALWAYS ZERO
         RET
+	ENDIF
 ;
 RAMEXC: LHLD TXTUNF             ;POINT AT MEM.LOC TO EXECUTE
         PCHL                    ;FORCE ADDR TO PGM.CNTR
@@ -1875,9 +1888,6 @@ QT3:    RST  1                  ;IS IT A '
 QT4:    RST  1                  ;IS IT BACK-SLASH?
         DB   '\\'
         DB   QT5-$-1
-QT6:    IN   UARTC              ;YES, CR WITHOUT LF
-        ANI  1H                 ;STATUS BIT
-        JZ   QT6                ;NOT READY, WAIT
         CALL TSTNUM             ;GET SUCCEEDING NUMBER
         MOV  A,B                ;B IS NUMBER OF DIGITS
         ORA  A                  ;DID WE GET ANY DIGITS
@@ -1886,7 +1896,7 @@ QT6:    IN   UARTC              ;YES, CR WITHOUT LF
         ORA  A                  ;ASCII 0..255
         CNZ  QHOW               ;ERROR IF HL > 255
         MOV  A,L                ;PUT CHAR IN ACC
-        OUT  UARTD              ;AND SEND IT OUT
+	CALL CONPUT
         POP  H                  ;RETURN ADDRESS
         JMP  QT2
 QT5:    RET                     ;NONE OF ABOVE
@@ -2064,29 +2074,18 @@ PU1:    PUSH H
 ;
 ;START:  LXI  SP,STACK          ;THIS IS AT LOC. 0
 ;        MVI  A,80H
-INIT:   OUT  DAC                ;PUT OUT HALF VCC ON DAC
-;	MVI  A,77H	        ; STD7304 9600 Baud
-;        OUT  UARTB
-        SUB  A                  ;RESET A
-        OUT  SELECT             ;RESET D F/F SELECT LINES
-        OUT  UARTC              ;PUT 8251 IN COMMAND MODE
-        OUT  UARTC              ;WRITE 0 THREE TIMES
-        OUT  UARTC
-        MVI  A,URESET           ;RESET COMMAND
-        OUT  UARTC              ;WRITE IT TO 8251 USART
-        MVI  A,USETUP           ;8 DATA, 1 STOP, X16
-        OUT  UARTC              ;WRITE IT TO 8251 USART
-        MVI  A,UENABL           ;ERRST, RXEN, TXEN
-        OUT  UARTC              ;WRITE IT TO 8251 USART
-;
-ZMEM:   LXI  H,RAMBGN           ;ZERO OUT MEMORY FROM
+INIT:   SUB  A                  ;CLEAR A
+        OUT  OBP                ;RESET THE ONBOARD PORT
+	CALL CONINIT
+        LXI  H,RAMBGN           ;ZERO OUT MEMORY FROM
         LXI  D,STKLMT           ;RAMBEGIN TO STACKLIMIT
 ZMEM1:  MVI  M,0
         INX  H
         RST  4                  ;USE RST 4 TO COMPARE
         JNZ  ZMEM1              ;16k LOOP TAKES 305ms
-;
-        LXI  H,6144             ;INITIATE DEFAULT XTAL[kHz]
+; FIXME Currently have a 6MHz crystal
+;        LXI  H,6144             ;INITIATE DEFAULT XTAL[kHz]
+        LXI  H,6000
         CALL SETXTL             ;START TIMER TO GET INT7.5
         MVI  A,1BH              ;RST F/F & ENABLE INT7.5
         SIM                     ;SET THE NEW MASK
@@ -2143,11 +2142,7 @@ PSTR:   MOV  A,M                ;GET A CHARACTER
 ; 'CHKIO' WILL RESTART TBI AND DO NOT RETURN TO THE CALLER.
 ;
 ;OUTC:  PUSH PSW                ;THIS IS AT LOC. 10
-OC3:    IN   UARTC              ;COME HERE TO DO OUTPUT
-        ANI  1H                 ;STATUS BIT
-        JZ   OC3                ;NOT READY, WAIT
-        POP  PSW                ;READY, GET OLD A BACK
-        OUT  UARTD              ;AND SEND IT OUT
+OC3:    CALL CONPUT
         CPI  CR                 ;WAS IT CR?
         RNZ                     ;NO, FINISHED
         MVI  A,LF               ;YES, WE SEND LF TOO
@@ -2159,11 +2154,9 @@ INCHR:  CALL CHKIO              ;CHECK IF CHAR RCVD
         JZ   INCHR              ;IF NOT, CHECK AGAIN
         RET                     ;RETURN WITH CHAR
 ;
-CHKIO:  IN   UARTC              ;*** CHKIO ***
-        ANI  2H                 ;MASK STATUS BIT
-        RZ                      ;NOT READY, RETURN "Z"
-        IN   UARTD              ;READY, READ DATA
-CI1:    CPI  3H                 ;IS IT CONTROL-C?
+CHKIO:  CALL CONGET             ;*** CHKIO ***
+	RZ			;CHECK IF CHARACTER IS PRESENT
+        CPI  3H                 ;IS IT CONTROL-C?
         RNZ                     ;NO, RETURN "NZ"
         JMP  CTRLC              ;YES, RESTART TBI
 ;
@@ -2196,16 +2189,24 @@ TAB1:                           ;DIRECT COMMANDS
         DWA  RUN
         DB   "NEW"
         DWA  NEW
+	IFDEF OPTION_LOADSAVE
         DB   "SAVE"
         DWA  SAVE
         DB   "LOAD"
         DWA  LOAD
+	ENDIF
         DB   "EDIT"
         DWA  EDIT
+	
+	IFDEF OPTION_MAN
         DB   "MAN"
         DWA  MAN
+	ENDIF
+
+	IFDEF OPTION_HELP
         DB   "?"
         DWA  HELP
+	ENDIF
 ;
 TAB2:                           ;DIRECT/STATEMENT
         DB   "NEXT"
@@ -2230,8 +2231,12 @@ TAB2:                           ;DIRECT/STATEMENT
         DWA  PUTC
         DB   "OUT"
         DWA  POUT
+
+	IFDEF OPTION_SPI
         DB   "SOD"
         DWA  SOD
+	ENDIF
+	
         DB   "POKE"
         DWA  POKE
         DB   "WAIT"
@@ -2261,8 +2266,12 @@ TAB4:                           ;FUNCTIONS
         DWA  PLUS
         DB   "IN"
         DWA  PIN
+
+	IFDEF OPTION_SPI
         DB   "SID"
         DWA  SID
+	ENDIF
+	
         DB   "PEEK"
         DWA  PEEK
         DB   "GETC"
@@ -2345,12 +2354,13 @@ EX5:    MOV  A,M                ;LOAD HL WITH THE JUMP
         MOV  H,A
         POP  PSW                ;CLEAN UP THE GABAGE
         PCHL                    ;AND WE GO DO IT
-;
+
+	IFDEF OPTION_SPI
 ;*************************************************************
 ;
 ; *** SPI IMPLEMENTATION USING SID/SOD AND IO WRITE AS CLK ***
 ;
-; SDOUT AND SDIN ARE SOFTWARE DRIVVEN SERIAL OUTPUT AND INPUT
+; SDOUT AND SDIN ARE SOFTWARE DRIVEN SERIAL OUTPUT AND INPUT
 ; FUNCTIONS USING 8085 PINS SOD AND SID FOR DATA TRANSFER AND
 ; A DUMMY I/O WRITE TO GENERATE CLOCK PULSE. SERIAL DATA OUTPUT
 ; FREQUENCY IS ABOUT 64KBIT WHEN INCLUDING CALL AND RETURN
@@ -2403,14 +2413,18 @@ SDI1:   RIM                     ;READ CURRRENT BIT
 ;
 ; ARGUMENTS: EEPROM START ADR [BC], LENGTH [DE], MEM DATAPTR [HL]
 ;
-CSLOW:  MVI  A,UENABL+UDTR      ;** SELECT EEPROM **
-        OUT  UARTC              ;WRITE TO PORT
+CSLOW:
+; FIXME	
+;	MVI  A,UENABL+UDTR      ;** SELECT EEPROM **
+;        OUT  UARTC              ;WRITE TO PORT
         RET
 ;
-CSHIGH: PUSH PSW                ;** DESELECT EEPROM **
-        MVI  A,UENABL           ;MUST SAVE ACKUMULATOR
-        OUT  UARTC              ;WHILE SETTING OUTPUT
-        POP  PSW                ;RESTORE ACKUMULATOR
+CSHIGH:
+; FIXME
+;	PUSH PSW                ;** DESELECT EEPROM **
+;        MVI  A,UENABL           ;MUST SAVE ACKUMULATOR
+;        OUT  UARTC              ;WHILE SETTING OUTPUT
+;        POP  PSW                ;RESTORE ACKUMULATOR
         RET
 ;
 CHKWIP: LXI  B,128              ;** WRITE IN PROGRESS **
@@ -2510,14 +2524,18 @@ EEW3:   CALL SUBDE              ;SUB CHUNK LEN FROM TOT
         MOV  L,C                ;BACK TO (HL)
         SHLD STKLMT+0           ;SAVE NEW ADDRESS
         JMP  EEW1               ;AND CONTINUE
-;
+				;
+	ENDIF
+	
 MSG0:   DB   CR
-        DB   "    TINY BASIC FOR INTEL 8085"    ,CR
-        DB   " LI-CHEN WANG/ROGER RAUSKOLB 1976",CR
-        DB   "        ANDERS HJELM 2020"        ,CR
-        DB   "        Denis Dowling 2023"        ,CR
+        DB   "TINY BASIC FOR INTEL 8085", CR
+        DB   "LI-CHEN WANG/ROGER RAUSKOLB 1976", CR
+        DB   "ANDERS HJELM 2020", CR
+        DB   "DENIS DOWLING 2023", CR
+	DB   "BUILT ", DATE, " ", TIME, CR
         DB   0
-;
+				;
+	IFDEF OPTION_HELP
 MSGHLP: DB   CR
         DB   "CMDS| STATEMENTS  |FUNC|OPERANDS",CR
         DB   "----|-------------|----|--------",CR
@@ -2532,7 +2550,9 @@ MSGHLP: DB   CR
         DB   "    |STOP   SIGNED|LEN | !   ~ ",CR
         DB   "    |REM    UNSIGN|FREE|&  |  ^",CR
         DB   0
-;
+	ENDIF
+				;
+	IFDEF OPTION_MANUAL
 MSGMAN: DB   CR
         DB   "Tiny Basic for Micro 8085 board"                                  ,CR
         DB   "-------------------------------"                                  ,CR
@@ -2588,7 +2608,10 @@ MSGMAN: DB   CR
         DB   "PUTC expr         Prints the ascii char of expr"                  ,CR
         DB   "POKE addr,value   Perform CPU memory write operation"             ,CR
         DB   "OUT addr,value    Perform CPU io write operation"                 ,CR
+	IFDEF OPTION_SPI
         DB   "SOD value         Serial output data, SPI bus transmit"           ,CR
+	ENDIF
+	
         DB   "WAIT expr    Wait/halts execution for expr millisecs"             ,CR
         DB   "BEEP expr    Makes sound with duration expr millisecs"            ,CR
         DB   "XTAL expr    Manipulate the freq.division (default 6144)"         ,CR
@@ -2619,7 +2642,10 @@ MSGMAN: DB   CR
         DB   "ABS expr   Absolute value of expr"                                ,CR
         DB   "PEEK addr  Value of CPU memory at addr"                           ,CR
         DB   "IN addr    Value of CPU io read operation"                        ,CR
+	IFDEF OPTION_SPI
         DB   "SID        Serial input data, SPI bus read"                       ,CR
+	ENDIF
+	
         DB   "GETC       ASCII value of most recent pressed key (or zero)"      ,CR
         DB   "TIME       Value of millisec counter (use UNSIGN mode)"           ,CR
         DB   "USR addr[,HL,DE,BC,A]  Call assembler routine on addr"            ,CR
@@ -2637,9 +2663,18 @@ MSGMAN: DB   CR
         DB   " <<  Left shift     != Not equal"                                 ,CR
         DB   " >>  Right shift"                                                 ,CR
         DB   0
-;
-BDATE:  DB   "20230104",CR
-        DB   0
+	ENDIF
+
+;;; SELECTION OF THE SERIAL PORT
+	IFDEF SERIAL_ONBOARD
+	INCLUDE "onboard_hw_serial.asm"
+	ELSEIF SERIAL_SOFT
+	INCLUDE "soft_serial.asm"
+	ELSEIF SERIAL_7304
+	INCLUDE "std7304.asm"
+	ELSE
+	ERROR "MUST DEFINE WHAT SERIAL SUPPORT IS DESIRED"
+	ENDIF
 ;
 LSTROM:		                 ;ALL ABOVE CAN BE ROM
 ;
@@ -2661,6 +2696,9 @@ LOPLMT: DS   2                  ;LIMIT
 LOPLN:  DS   2                  ;LINE NUMBER
 LOPPT:  DS   2                  ;TEXT POINTER
 RNDNUM: DS   2                  ;RANDOM NUMBER
+	IFDEF SERIAL_SOFT
+STPFLG:	DS   1 			;INPUT STOP FLAG
+	ENDIF
 TXTUNF: DS   2                  ;->UNFILLED TEXT AREA
 TXTBGN:                         ;TEXT SAVE AREA BEGINS
 ;                               ;WHERE BASIC PGM IS STORED
@@ -2702,26 +2740,9 @@ OSELC	EQU 00100000b
 OSELD	EQU 01000000b
 OBUZZ	EQU 10000000b
 	
-; 8153 REGISTERS
-;UART 	EQU 050H		
-;UARTB  	EQU UART + 00H
-;UARTD 	EQU UART + 03H
-;UARTC 	EQU UART + 04H
-UARTD 	EQU 0F8H
-UARTC	EQU 0F9H
-	
-URESET  EQU  01000000b          ;RESET COMMAND
-USETUP	EQU 04EH
-UENABL  EQU 037H
-UDTR	EQU 0H
 	
 	;; FIXME These peripherals need to be deleted as they do no exist
 SPICLK  EQU  20H
-SELECT  EQU  0FCH
-;
-ADC1    EQU  40H                ;ADC CONV.TIME 140 MICROSEC
-ADC2    EQU  50H                ;OK TO USE CONSECUTIVE BASIC
-DAC     EQU  60H                ;OUT(WRITE/START) THEN IN(READ)
 ;
 ; *** SERIAL EEPROM COMMANDS AND SIZE ***
 EEWREN  EQU  6H
