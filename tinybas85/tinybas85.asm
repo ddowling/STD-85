@@ -2554,11 +2554,11 @@ MSGHLP: DB   CR
 				;
 	IFDEF OPTION_MANUAL
 MSGMAN: DB   CR
-        DB   "Tiny Basic for Micro 8085 board"                                  ,CR
-        DB   "-------------------------------"                                  ,CR
-        DB   "This implementation is based on Palo Alto Tiny Basic."            ,CR
+        DB   "Tiny Basic for STD-85", CR
+        DB   "-------------------------------", CR
+        DB   "This implementation is based on Palo Alto Tiny Basic.", CR
         DB   "Credits to Dr.Li-Chen Wang and Roger Rauskolb, 1976."             ,CR
-        DB   "Additions and updates by Anders Hjelm, 2020."                     ,CR
+        DB   "Additions and updates by Anders Hjelm, 2020 and Denis Dowling, 2023",CR
         DB   CR
         DB   "Connect to PC using USB port. Open a terminal emulator, e.g."     ,CR
         DB   "TeraTerm using comm. setup 19200 bps, 8 data bits, no parity."    ,CR
@@ -2576,9 +2576,13 @@ MSGMAN: DB   CR
         DB   "LIST [n] Lists all statements (Option from line number)"          ,CR
         DB   "RUN      Execute the current program"                             ,CR
         DB   "NEW      Purge all lines of the current program"                  ,CR
-        DB   "SAVE     Save current program to non volatile memory"             ,CR
+
+	IFDEF OPTION_LOADSAVE
+	DB   "SAVE     Save current program to non volatile memory"             ,CR
         DB   "LOAD     Load program from non volatile memory"                   ,CR
-        DB   "EDIT n   Edit or change program line with number n"               ,CR
+	ENDIF
+	
+	DB   "EDIT n   Edit or change program line with number n"               ,CR
         DB   "MAN      This manual"                                             ,CR
         DB   "?        Short help"                                              ,CR
         DB   CR
