@@ -1,5 +1,6 @@
 # STD-85
-This repository contains some programs for my STD-85 processor card designed by Craig from Bits of the FIXME ...
+This repository contains some programs for my STD-85 processor card designed by Craig from Bits of the Golden Age (http://bitsofthegoldenage.org/documentation/std-8085-sbc-v1-x-documentation/)
+
 
 ## External Requirements
 ### a85
